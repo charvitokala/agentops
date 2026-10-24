@@ -291,15 +291,18 @@ test("reused message DOM IDs are checked again before selection", () => {
   }
 });
 
-test("horizontal layouts are skipped unless a unique enclosing message row allows placement", () => {
+test("horizontal layouts use a message-owned slot or a unique enclosing row", () => {
   const app = setup();
   try {
     app.container.style.display = "flex";
     app.container.style.flexDirection = "row";
     app.container.querySelector(".selectable-text").textContent = high;
     app.monitor.setEnabled(true);
-    assert.equal(hosts(app.document).length, 0);
-    assert.ok(app.diagnostics.includes("unsupported-message-layout"));
+    assert.equal(hosts(app.document).length, 1);
+    assert.equal(
+      hosts(app.document)[0].parentElement,
+      app.container.querySelector(".message-in"),
+    );
     app.monitor.setEnabled(false);
     app.container.style.display = "block";
     const row = app.document.createElement("div");
@@ -318,14 +321,45 @@ test("horizontal layouts are skipped unless a unique enclosing message row allow
   }
 });
 
-test("absolutely positioned message anchors are skipped instead of placing a note in unrelated flow", () => {
+test("message layouts without a vertical content slot are still skipped rather than guessed", () => {
   const app = setup();
   try {
-    app.container.querySelector(".selectable-text").textContent = high;
-    app.container.querySelector(".message-in").style.position = "absolute";
+    app.container.replaceChildren(
+      message(app.document, { id: "no-slot", text: high }),
+    );
+    app.container.style.display = "flex";
+    app.container.style.flexDirection = "row";
+    app.container.querySelector(".message-in").style.display = "flex";
+    app.container.querySelector(".message-in").style.flexDirection = "row";
     app.monitor.setEnabled(true);
     assert.equal(hosts(app.document).length, 0);
     assert.ok(app.diagnostics.includes("unsupported-message-layout"));
+  } finally {
+    app.close();
+  }
+});
+
+test("cloned in-message note hosts are replaced without duplicates or observer loops", async () => {
+  const app = setup();
+  try {
+    app.container.style.display = "flex";
+    app.container.style.flexDirection = "row";
+    const bubble = message(app.document, { id: "cloned-message", text: high });
+    app.container.replaceChildren(bubble);
+    app.monitor.setEnabled(true);
+    const clone = bubble.cloneNode(true);
+    bubble.replaceWith(clone);
+    await waitFor(
+      () =>
+        hosts(app.document).length === 1 && !!hosts(app.document)[0].shadowRoot,
+    );
+    assert.equal(hosts(app.document)[0].parentElement, clone);
+    assert.equal(app.monitor.refresh().messages[0].text, high);
+    const count = app.counts();
+    await delay(25);
+    assert.deepEqual(app.counts(), count);
+    app.monitor.setEnabled(false);
+    assert.equal(hosts(app.document).length, 0);
   } finally {
     app.close();
   }
@@ -340,6 +374,77 @@ test("stale orphan notes are removed in the mutation microtask before the deboun
     app.container.querySelector(".message-in").remove();
     await Promise.resolve();
     assert.equal(hosts(app.document).length, 0);
+  } finally {
+    app.close();
+  }
+});
+
+test("flex message wrappers still expose More Info beneath the verified message content", async () => {
+  const app = setup();
+  try {
+    const wrapper = app.document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "row";
+    const bubble = message(app.document, { id: "flex-incoming", text: high });
+    wrapper.append(bubble);
+    app.container.replaceChildren(wrapper);
+    app.monitor.setEnabled(true);
+    assert.equal(app.monitor.getSnapshot().messages.length, 1);
+    assert.equal(hosts(app.document).length, 1);
+    const note = hosts(app.document)[0];
+    assert.equal(note.parentElement, bubble);
+    assert.equal(bubble.lastElementChild, note);
+    assert.equal(wrapper.style.flexDirection, "row");
+    note.shadowRoot.querySelector("button").click();
+    await delay(0);
+    assert.deepEqual(app.selected, [app.monitor.getSnapshot().messages[0].id]);
+    assert.equal(app.monitor.refresh().messages[0].text, high);
+  } finally {
+    app.close();
+  }
+});
+
+test("horizontal bubbles use their vertical body wrapper and preserve native controls", () => {
+  const app = setup();
+  try {
+    app.container.style.display = "flex";
+    app.container.style.flexDirection = "row";
+    const bubble = message(app.document, { id: "body-wrapped", text: high });
+    bubble.style.display = "flex";
+    bubble.style.flexDirection = "row";
+    const body = app.document.createElement("div");
+    body.className = "copyable-text";
+    const text = bubble.firstElementChild;
+    body.append(text);
+    const control = app.document.createElement("button");
+    control.textContent = "Message menu";
+    bubble.append(body, control);
+    app.container.replaceChildren(bubble);
+    app.monitor.setEnabled(true);
+    assert.equal(hosts(app.document).length, 1);
+    assert.equal(hosts(app.document)[0].parentElement, body);
+    assert.equal(text.parentElement, body);
+    assert.equal(control.parentElement, bubble);
+    assert.equal(app.monitor.refresh().messages[0].text, high);
+  } finally {
+    app.close();
+  }
+});
+
+test("positioned message wrappers contain their own note rather than suppressing More Info", () => {
+  const app = setup();
+  try {
+    const bubble = message(app.document, {
+      id: "positioned-incoming",
+      text: medium,
+    });
+    bubble.style.position = "absolute";
+    app.container.replaceChildren(bubble);
+    app.monitor.setEnabled(true);
+    assert.equal(hosts(app.document).length, 1);
+    assert.equal(hosts(app.document)[0].parentElement, bubble);
+    assert.equal(bubble.style.position, "absolute");
+    assert.ok(hosts(app.document)[0].shadowRoot.querySelector("button"));
   } finally {
     app.close();
   }

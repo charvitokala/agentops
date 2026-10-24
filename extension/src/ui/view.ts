@@ -1,9 +1,16 @@
-import type { MonitoringSnapshot } from "../shared/contracts.ts";
+import type {
+  ExtractedMessage,
+  MonitoringSnapshot,
+} from "../shared/contracts.ts";
+import { explainAssessment } from "../detection/explanations.ts";
 import type {
   PreliminaryAssessment,
   RiskLevel,
   ScamCategory,
 } from "../detection/types.ts";
+import { cardInsights, investigationSummary } from "./card-insights.ts";
+import { cardIcon } from "./icons.ts";
+import type { CardIcon } from "./icons.ts";
 
 const riskLabels: Record<RiskLevel, string> = {
   high: "High risk",
@@ -22,71 +29,281 @@ const categoryLabels: Record<ScamCategory, string> = {
   unknown: "Not identified",
 };
 
-function assessmentView(
-  assessment: PreliminaryAssessment | undefined,
+function textNode(
+  document: Document,
+  tag: string,
+  text: string,
+  className = "",
 ): HTMLElement {
-  const section = document.createElement("section");
-  section.className = "preliminary-assessment";
-  const heading = document.createElement("h3");
-  heading.textContent = "Preliminary rule-based assessment";
-  section.append(heading);
-  if (!assessment) {
-    const missing = document.createElement("p");
-    missing.className = "secondary";
-    missing.textContent =
-      "Assessment unavailable. Reload WhatsApp Web to update the reader.";
-    section.append(missing);
-    return section;
-  }
-  const risk = document.createElement("span");
-  risk.className = `badge assessment-risk risk-${assessment.riskLevel}`;
-  risk.textContent = riskLabels[assessment.riskLevel];
-  const category = document.createElement("p");
-  category.className = "assessment-category";
-  category.textContent = `Category: ${categoryLabels[assessment.category]}`;
-  const summary = document.createElement("p");
-  summary.className = "assessment-summary";
-  summary.textContent = assessment.summary;
-  const score = document.createElement("p");
-  score.className = "secondary";
-  score.textContent = `Rule severity score: ${assessment.riskScore}/100. This is a heuristic score, not a fraud probability.`;
-  section.append(risk, category, summary, score);
-  const signalsHeading = document.createElement("h4");
-  signalsHeading.textContent = "Warning signs";
-  section.append(signalsHeading);
-  if (!assessment.signals.length) {
-    const none = document.createElement("p");
-    none.className = "secondary";
-    none.textContent =
-      "No warning patterns matched these rules. The message and sender are not verified.";
-    section.append(none);
-  } else {
-    const list = document.createElement("ul");
-    for (const signal of assessment.signals) {
+  const node = document.createElement(tag);
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
+
+function panel(
+  document: Document,
+  className: string,
+  heading: string,
+  icon?: CardIcon,
+): HTMLElement {
+  const card = document.createElement("section");
+  card.className = `card dashboard-card ${className}`;
+  const title = textNode(document, "h3", heading, "card-heading");
+  if (icon) title.prepend(cardIcon(document, icon));
+  card.append(title);
+  return card;
+}
+
+function scoreCard(document: Document, value: unknown): HTMLElement {
+  const score =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.min(100, Math.max(0, value))
+      : null;
+  const card = panel(
+    document,
+    "score-card fraud-risk-score",
+    "Fraud Risk Score",
+  );
+  card.append(
+    textNode(
+      document,
+      "p",
+      score === null ? "N/A" : `${score}%`,
+      "fraud-risk-score-value",
+    ),
+    textNode(
+      document,
+      "p",
+      "Rule-based risk score, not a fraud probability.",
+      "secondary",
+    ),
+  );
+  return card;
+}
+
+function technicalDetails(
+  document: Document,
+  message: ExtractedMessage,
+  assessment?: PreliminaryAssessment,
+): HTMLElement {
+  const details = document.createElement("details");
+  details.className = "card technical-details";
+  details.append(textNode(document, "summary", "Technical Details"));
+  const meta = document.createElement("div");
+  meta.className = "message-meta";
+  meta.append(
+    textNode(
+      document,
+      "span",
+      {
+        incoming: "Incoming",
+        outgoing: "Outgoing",
+        unknown: "Direction unknown",
+      }[message.direction],
+      "badge",
+    ),
+  );
+  const time = document.createElement("time");
+  time.dateTime = message.observedAt;
+  const date = new Date(message.observedAt);
+  time.textContent = `Observed ${Number.isFinite(date.getTime()) ? date.toLocaleString() : message.observedAt}`;
+  meta.append(time);
+  details.append(
+    meta,
+    textNode(document, "h3", "Preliminary rule-based assessment"),
+  );
+  if (assessment) {
+    details.append(
+      textNode(
+        document,
+        "p",
+        `Category: ${categoryLabels[assessment.category]}`,
+        "secondary",
+      ),
+      textNode(document, "p", assessment.summary, "assessment-summary"),
+      textNode(
+        document,
+        "p",
+        `Method: ${assessment.analysisMethod}. Analyzed: ${assessment.analyzedAt}`,
+        "secondary",
+      ),
+    );
+    const explanation = explainAssessment(message, assessment);
+    details.append(textNode(document, "h3", explanation.heading));
+    const findings = document.createElement("ul");
+    for (const finding of explanation.items) {
       const item = document.createElement("li");
-      const label = document.createElement("strong");
-      label.textContent = signal.label;
-      const explanation = document.createElement("p");
-      explanation.textContent = signal.explanation;
-      item.append(label, explanation);
+      item.append(
+        textNode(document, "strong", finding.label),
+        textNode(document, "p", finding.explanation),
+      );
+      findings.append(item);
+    }
+    const fullActions = document.createElement("ol");
+    for (const action of assessment.recommendedActions)
+      fullActions.append(textNode(document, "li", action));
+    details.append(
+      findings,
+      textNode(document, "h3", "All recommendations"),
+      fullActions,
+    );
+  }
+  details.append(
+    textNode(
+      document,
+      "p",
+      "Local rules only. No AI agents have run, and no evidence or sender identity has been verified.",
+      "secondary",
+    ),
+  );
+  details.append(textNode(document, "h3", "Extracted URLs"));
+  if (!message.urls.length)
+    details.append(textNode(document, "p", "No URLs detected.", "secondary"));
+  else {
+    const list = document.createElement("ul");
+    for (const url of message.urls) {
+      const item = document.createElement("li");
+      item.append(textNode(document, "code", url));
       list.append(item);
     }
-    section.append(list);
+    details.append(list);
   }
-  const actionsHeading = document.createElement("h4");
-  actionsHeading.textContent = "What to do next";
-  const actions = document.createElement("ol");
-  for (const recommendation of assessment.recommendedActions) {
-    const action = document.createElement("li");
-    action.textContent = recommendation;
-    actions.append(action);
+  return details;
+}
+
+function messageDashboard(
+  document: Document,
+  message: ExtractedMessage,
+  assessment: PreliminaryAssessment | undefined,
+  moreInfo: (() => Promise<void>) | undefined,
+): HTMLElement {
+  const article = document.createElement("article");
+  article.className = "card message-card";
+  article.id = `message-${globalThis.crypto.randomUUID()}`;
+  article.dataset.messageId = message.id;
+  article.setAttribute(
+    "aria-label",
+    message.email?.subject || "Message analysis",
+  );
+  const grid = document.createElement("div");
+  grid.className = "preliminary-assessment dashboard-grid";
+  const original = panel(
+    document,
+    "original-message-card",
+    "Message",
+    "message",
+  );
+  if (message.email)
+    original.append(
+      textNode(document, "p", `From: ${message.email.sender}`, "email-sender"),
+    );
+  const content = textNode(document, "p", message.text, "message-text");
+  content.tabIndex = 0;
+  content.setAttribute("role", "region");
+  content.setAttribute("aria-label", "Complete message content");
+  original.append(content);
+  const summary = panel(
+    document,
+    "message-summary-card",
+    "Investigation",
+    "search",
+  );
+  summary.append(
+    textNode(document, "p", investigationSummary(message), "content-summary"),
+  );
+  const level = assessment?.riskLevel;
+  const risk = panel(
+    document,
+    `risk-status-card risk-${level ?? "insufficient_evidence"}`,
+    "Final Judgment",
+    "scales",
+  );
+  const status = level ? riskLabels[level] : "N/A";
+  risk.append(textNode(document, "p", status, "risk-status-value"));
+  risk.append(
+    textNode(document, "p", "Local rules · no agents run", "risk-caution"),
+  );
+  const insights = cardInsights(message, assessment);
+  function perspective(
+    className: string,
+    heading: string,
+    icon: CardIcon,
+    items: string[],
+  ): HTMLElement {
+    const card = panel(
+      document,
+      `${className} perspective-card`,
+      heading,
+      icon,
+    );
+    card.querySelector("h3")?.classList.add("assessment-explanation-heading");
+    const list = document.createElement("ul");
+    for (const item of items) list.append(textNode(document, "li", item));
+    card.append(list);
+    return card;
   }
-  const note = document.createElement("p");
-  note.className = "secondary";
-  note.textContent =
-    "Local rules only. No AI agents have run, and no evidence or sender identity has been verified.";
-  section.append(actionsHeading, actions, note);
-  return section;
+  const defender = perspective(
+    "defender-card",
+    "Defender",
+    "shield",
+    insights.defender,
+  );
+  const prosecutor = perspective(
+    "explanation-card prosecutor-card",
+    "Prosecuter",
+    "lawyer",
+    insights.prosecutor,
+  );
+  const actions = document.createElement("section");
+  actions.className = "card dashboard-card actions-card";
+  actions.append(
+    textNode(
+      document,
+      "h4",
+      "What to do next",
+      "assessment-explanation-heading",
+    ),
+  );
+  const recommendations = document.createElement("ol");
+  for (const action of insights.actions)
+    recommendations.append(textNode(document, "li", action));
+  actions.append(recommendations);
+  if (moreInfo) {
+    const button = textNode(
+      document,
+      "button",
+      "More Info →",
+      "primary",
+    ) as HTMLButtonElement;
+    button.type = "button";
+    const error = textNode(document, "p", "", "error");
+    error.setAttribute("role", "status");
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      error.textContent = "";
+      try {
+        await moreInfo();
+      } catch {
+        error.textContent =
+          "This message is unavailable. Check monitoring and reload the source tab, then try again.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+    actions.append(button, error);
+  }
+  grid.append(
+    original,
+    risk,
+    scoreCard(document, assessment?.riskScore),
+    summary,
+    defender,
+    prosecutor,
+    actions,
+  );
+  article.append(grid, technicalDetails(document, message, assessment));
+  return article;
 }
 
 export function element<T extends HTMLElement>(id: string): T {
@@ -98,71 +315,77 @@ export function element<T extends HTMLElement>(id: string): T {
 export function describeSnapshot(snapshot: MonitoringSnapshot): string {
   if (!snapshot.enabled) return "Monitoring is off";
   if (snapshot.status === "waiting_for_conversation")
-    return "Open a conversation in WhatsApp Web";
+    return snapshot.source === "gmail"
+      ? "Open an email in Gmail"
+      : "Open a conversation in WhatsApp Web";
   if (snapshot.status === "unsupported_layout")
     return "Conversation layout not recognized";
   return snapshot.conversation
-    ? `Open conversation: ${snapshot.conversation.label}`
+    ? `${snapshot.source === "gmail" ? "Open email" : "Open conversation"}: ${snapshot.conversation.label}`
     : "Conversation detected";
 }
 
+interface RenderCache {
+  records: Map<string, { node: HTMLElement; fingerprint: string }>;
+  moreInfo?: (messageId: string) => Promise<void>;
+}
+const renderCaches = new WeakMap<HTMLElement, RenderCache>();
+
+/** Reconcile by message ID; unchanged sections retain scroll position and open details. */
 export function renderMessages(
   container: HTMLElement,
   snapshot: MonitoringSnapshot,
+  onMoreInfo?: (messageId: string) => Promise<void>,
 ): void {
-  const fragment = document.createDocumentFragment();
-  const assessments = new Map(
-    snapshot.assessments?.map((assessment) => [
-      assessment.messageId,
-      assessment,
-    ]),
-  );
-  for (const message of snapshot.messages) {
-    const card = document.createElement("article");
-    card.className = "card message-card";
-    const meta = document.createElement("div");
-    meta.className = "message-meta";
-    const direction = document.createElement("span");
-    direction.className = "badge";
-    direction.textContent = {
-      incoming: "Incoming",
-      outgoing: "Outgoing",
-      unknown: "Direction unknown",
-    }[message.direction];
-    const time = document.createElement("time");
-    time.dateTime = message.observedAt;
-    const date = new Date(message.observedAt);
-    time.textContent = `Observed ${Number.isFinite(date.getTime()) ? date.toLocaleString() : message.observedAt}`;
-    meta.append(direction, time);
-    const text = document.createElement("p");
-    text.className = "message-text";
-    text.textContent = message.text;
-    const linksLabel = document.createElement("h3");
-    linksLabel.textContent = "Extracted URLs";
-    card.append(
-      meta,
-      text,
-      assessmentView(assessments.get(message.id)),
-      linksLabel,
-    );
-    if (!message.urls.length) {
-      const none = document.createElement("p");
-      none.className = "secondary";
-      none.textContent = "No URLs detected.";
-      card.append(none);
-    } else {
-      const list = document.createElement("ul");
-      for (const url of message.urls) {
-        const item = document.createElement("li");
-        const code = document.createElement("code");
-        code.textContent = url;
-        item.append(code);
-        list.append(item);
-      }
-      card.append(list);
-    }
-    fragment.append(card);
+  let cache = renderCaches.get(container);
+  if (!cache) {
+    cache = { records: new Map() };
+    renderCaches.set(container, cache);
   }
-  // All WhatsApp-derived content is textContent, never HTML or clickable links.
-  container.replaceChildren(fragment);
+  cache.moreInfo = onMoreInfo;
+  const assessments = new Map(
+    snapshot.assessments?.map((item) => [item.messageId, item]),
+  );
+  const current = new Set<string>();
+  let position = 0;
+  for (const message of snapshot.messages) {
+    if (current.has(message.id)) continue;
+    current.add(message.id);
+    const assessment = assessments.get(message.id);
+    const eligible = Boolean(
+      onMoreInfo &&
+        snapshot.enabled &&
+        snapshot.status === "ready" &&
+        message.direction === "incoming" &&
+        assessment &&
+        ["high", "medium"].includes(assessment.riskLevel),
+    );
+    const fingerprint = JSON.stringify([message, assessment, eligible]);
+    let record = cache.records.get(message.id);
+    if (!record || record.fingerprint !== fingerprint) {
+      const node = messageDashboard(
+        container.ownerDocument,
+        message,
+        assessment,
+        eligible ? () => cache!.moreInfo!(message.id) : undefined,
+      );
+      if (record) {
+        node.id = record.node.id;
+        const wasOpen = record.node.querySelector("details")?.open;
+        const details = node.querySelector("details");
+        if (details) details.open = Boolean(wasOpen);
+        record.node.replaceWith(node);
+      }
+      record = { node, fingerprint };
+      cache.records.set(message.id, record);
+    }
+    if (container.children[position] !== record.node)
+      container.insertBefore(record.node, container.children[position] ?? null);
+    position++;
+  }
+  for (const [id, record] of cache.records)
+    if (!current.has(id)) {
+      record.node.remove();
+      cache.records.delete(id);
+    }
 }

@@ -11,12 +11,21 @@ interface MonitorOptions {
   onInvalidate?: () => void;
   debounceMs?: number;
   createObserver?: (callback: MutationCallback) => MutationObserver;
+  reader?: Pick<WhatsAppReader, "read" | "reset" | "resolveMessage">;
+  locateRoot?: (document: Document) => Element | null;
+  rootSelector?: string;
+  excludedSelector?: string;
+  extraAttributes?: string[];
+  source?: "gmail";
 }
 
 /** Two observers: cheap root lifecycle detection and scoped conversation changes. */
 export class ConversationMonitor {
   private snapshot = emptySnapshot();
-  private readonly reader = new WhatsAppReader();
+  private readonly reader: Pick<
+    WhatsAppReader,
+    "read" | "reset" | "resolveMessage"
+  >;
   private root: Element | null = null;
   private topologyObserver: MutationObserver | null = null;
   private conversationObserver: MutationObserver | null = null;
@@ -29,6 +38,7 @@ export class ConversationMonitor {
 
   constructor(options: MonitorOptions) {
     this.options = options;
+    this.reader = options.reader ?? new WhatsAppReader();
     const window = options.document.defaultView;
     if (!window) throw new Error("A document with a window is required.");
     this.makeObserver =
@@ -37,7 +47,10 @@ export class ConversationMonitor {
   }
 
   getSnapshot(): MonitoringSnapshot {
-    return structuredClone(this.snapshot);
+    return structuredClone({
+      ...this.snapshot,
+      ...(this.options.source ? { source: this.options.source } : {}),
+    });
   }
 
   resolveMessage(id: string) {
@@ -80,8 +93,12 @@ export class ConversationMonitor {
             return candidates.some(
               (node) =>
                 node.nodeType === 1 &&
-                ((node as Element).matches(SELECTORS.conversationRoot) ||
-                  (node as Element).querySelector(SELECTORS.conversationRoot)),
+                ((node as Element).matches(
+                  this.options.rootSelector ?? SELECTORS.conversationRoot,
+                ) ||
+                  (node as Element).querySelector(
+                    this.options.rootSelector ?? SELECTORS.conversationRoot,
+                  )),
             );
           })
         )
@@ -129,7 +146,9 @@ export class ConversationMonitor {
 
   private scan(): void {
     if (!this.snapshot.enabled) return;
-    const root = locateConversationRoot(this.options.document);
+    const root = (this.options.locateRoot ?? locateConversationRoot)(
+      this.options.document,
+    );
     if (root !== this.root) {
       this.conversationObserver?.disconnect();
       this.conversationObserver = null;
@@ -143,7 +162,9 @@ export class ConversationMonitor {
               record.target.nodeType === 1
                 ? (record.target as Element)
                 : record.target.parentElement;
-            return !element?.closest(SELECTORS.composer);
+            return !element?.closest(
+              this.options.excludedSelector ?? SELECTORS.composer,
+            );
           });
           if (relevant) {
             this.options.onInvalidate?.();
@@ -163,6 +184,7 @@ export class ConversationMonitor {
             "aria-hidden",
             "class",
             "style",
+            ...(this.options.extraAttributes ?? []),
           ],
         });
       }

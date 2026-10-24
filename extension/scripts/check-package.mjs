@@ -20,7 +20,12 @@ assert.deepEqual(manifest.content_scripts[0].matches, [
   "https://web.whatsapp.com/*",
 ]);
 assert.equal(manifest.content_scripts[0].world, "ISOLATED");
-assert.equal(manifest.content_scripts.length, 2);
+assert.equal(manifest.content_scripts.length, 3);
+assert.deepEqual(manifest.content_scripts[2].matches, [
+  "https://mail.google.com/*",
+]);
+assert.equal(manifest.content_scripts[2].world, "ISOLATED");
+assert.equal(manifest.content_scripts[2].all_frames, false);
 const bridge = manifest.content_scripts[1];
 const origin = websiteOrigin(
   bridge.matches[0].replace(/\/investigation\/\*$/, ""),
@@ -30,6 +35,7 @@ assert.equal(bridge.world, "ISOLATED");
 assert.equal(bridge.all_frames, false);
 for (const filename of [
   ...manifest.content_scripts[0].js,
+  ...manifest.content_scripts[2].js,
   ...bridge.js,
   manifest.background.service_worker,
   manifest.action.default_popup,
@@ -46,6 +52,7 @@ assert.ok(
 );
 for (const filename of [
   "content.js",
+  "gmail-content.js",
   "website-bridge.js",
   "background.js",
   "popup.js",

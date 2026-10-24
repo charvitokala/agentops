@@ -104,6 +104,13 @@ export function analyzeUrls(
       )
         reasons.add("The domain combines financial and verification words");
       if (
+        /\b(?:bank|account)\b/.test(host.replace(/[-.]/g, " ")) &&
+        /\bkyc\b/.test(host.replace(/[-.]/g, " "))
+      )
+        reasons.add(
+          "The domain combines account or banking words with KYC verification wording",
+        );
+      if (
         url.protocol === "http:" &&
         (FINANCIAL_CONTEXT.test(text) ||
           FINANCIAL_CONTEXT.test(host + url.pathname))

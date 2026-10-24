@@ -19,6 +19,10 @@ export const WEIGHTS = {
   policyThreat: 25,
   renewalPressure: 20,
   urgency: 10,
+  accountFee: 35,
+  rewardPayment: 35,
+  rewardPromise: 20,
+  isolation: 20,
 } as const;
 
 export interface TextRule {
@@ -49,9 +53,32 @@ export function normalizeText(text: string): string {
 export const FINANCIAL_CONTEXT =
   /\b(?:bank(?:ing)?|accounts?|kyc|otp|upi|pins?|passwords?|cards?|loans?|insurance|policy|refunds?|invest(?:ment)?|returns?|payments?|money|funds?)\b/i;
 export const PRESSURE =
-  /\b(?:immediately|urgent(?:ly)?|act now|right now|within \d+ (?:minutes?|hours?)|limited (?:time|seats|slots)|last chance|today only)\b/i;
+  /\b(?:immediately|urgent(?:ly)?|act now|right now|(?:within|in) \d+ (?:minutes?|hours?)|final warning|limited (?:time|seats|slots)|last chance|today only)\b/i;
 const SECRET =
-  "(?:otp|one[ -]?time (?:password|code)|six[ -]digit code|verification code|upi pin|pin|password|passcode|cvv|card (?:number|details|pin)|banking credentials)";
+  "(?:otp|one[ -]?time (?:password|code)|six[ -]digit code|verification code|upi pin|pin|password|passcode|cvv|card (?:number|details|pin)|banking credentials|bank(?:ing)? login(?: details| credentials)?|login (?:password|credentials|details))";
+
+export function hasPressure(text: string): boolean {
+  return PRESSURE.test(text.replace(/(?:https?:\/\/|www\.)\S+/g, " "));
+}
+
+function accountThreat({ sentences }: RuleContext): boolean {
+  return sentences.some(
+    (sentence) =>
+      /\baccount\b/.test(sentence) &&
+      !/\b(?:will not|not be|never|won't|no (?:account )?suspension)\b/.test(
+        sentence,
+      ) &&
+      (/\b(?:will be|being|is|gets?|may be)\b.{0,30}\b(?:blocked|suspended|closed|deactivated)\b/.test(
+        sentence,
+      ) ||
+        (/\baccount\b.{0,35}\b(?:blocked|suspended|blocking|suspension|closure|deactivation)\b/.test(
+          sentence,
+        ) &&
+          hasPressure(sentence))),
+  );
+}
+
+const REWARD = /\b(?:prizes?|rewards?|cashback|cash back|lottery|bonus)\b/;
 
 /** Negation is checked at each action, not globally across the entire message. */
 export function hasRequest(
@@ -81,7 +108,7 @@ export function hasRequest(
   return false;
 }
 
-function credentialRequest({ sentences }: RuleContext): boolean {
+function credentialRequest({ sentences, text }: RuleContext): boolean {
   return sentences.some(
     (sentence) =>
       hasRequest(
@@ -90,12 +117,14 @@ function credentialRequest({ sentences }: RuleContext): boolean {
         SECRET,
       ) ||
       hasRequest(sentence, "(?:i|we) (?:need|require)", SECRET) ||
-      (hasRequest(
-        sentence,
-        "enter|type",
-        "(?:your )?(?:password|passcode|cvv|card (?:number|details|pin))",
-      ) &&
-        /https?:\/\/|www\.|\b(?:link|form|website|page)\b/.test(sentence)) ||
+      (hasRequest(sentence, "enter|type|submit", SECRET) &&
+        (/https?:\/\/|www\.|\b(?:link|form|website|page|portal)\b/.test(
+          sentence,
+        ) ||
+          /https?:\/\//.test(text)) &&
+        !/\b(?:usual|official|normal) (?:banking |bank |payment )?app\b/.test(
+          sentence,
+        )) ||
       (/\b(?:bank|security|support) team (?:needs?|requires?)\b/.test(
         sentence,
       ) &&
@@ -117,7 +146,7 @@ function upfrontFee(sentence: string): boolean {
       "pay|send|transfer|deposit|remit",
       "(?:upfront |advance |processing |release |registration )?(?:fees?|charges?|payment|deposit|money|amount|rupees|rs)|[1-9]\\d*(?:[.,]\\d+)*",
     ) ||
-    (/\b(?:upfront|advance|processing|release) (?:fees?|payment|charges?)\b.{0,35}\b(?:required|must|first|before)\b/.test(
+    (/\b(?:(?:upfront|advance|processing|release|verification|activation|unlock) )?(?:fees?|charges?)\b.{0,35}\b(?:required|must|first|before)\b/.test(
       sentence,
     ) &&
       !/\b(?:no|never|do not|don't)\b/.test(sentence))
@@ -125,6 +154,86 @@ function upfrontFee(sentence: string): boolean {
 }
 
 export const TEXT_RULES: readonly TextRule[] = [
+  {
+    id: "account-unlock-fee",
+    label: "Fee demanded to unlock an account",
+    explanation:
+      "The message requires a payment to unlock, reactivate or verify an account.",
+    weight: WEIGHTS.accountFee,
+    category: "banking",
+    group: "advance_payment",
+    matches: ({ sentences }) =>
+      sentences.some(
+        (sentence) =>
+          /\b(?:account|banking)\b/.test(sentence) &&
+          /\b(?:unlock|unblock|reactivate|restore|verify|verification|activate)\b/.test(
+            sentence,
+          ) &&
+          upfrontFee(sentence),
+      ),
+  },
+  {
+    id: "reward-payment",
+    label: "Payment required to claim a reward",
+    explanation:
+      "The message asks for a fee or payment before you can claim or receive a prize or cashback.",
+    weight: WEIGHTS.rewardPayment,
+    category: "unknown",
+    group: "advance_payment",
+    matches: ({ text, sentences }) =>
+      REWARD.test(text) &&
+      sentences.some(
+        (sentence) =>
+          upfrontFee(sentence) &&
+          /\b(?:before|first|release|claim|receive|redeem|unlock)\b/.test(
+            sentence,
+          ),
+      ),
+  },
+  {
+    id: "reward-promise",
+    label: "Reward promise requiring action",
+    explanation:
+      "The message promises a guaranteed prize or cashback, or says you have won, and asks you to act.",
+    weight: WEIGHTS.rewardPromise,
+    category: "unknown",
+    group: "reward_promise",
+    matches: ({ text, sentences }) =>
+      sentences.some(
+        (sentence) =>
+          REWARD.test(sentence) &&
+          /\b(?:guaranteed|you (?:have |have been |are )?(?:won|winner|selected)|you've won)\b/.test(
+            sentence,
+          ) &&
+          !/\b(?:not guaranteed|no guaranteed|not won|no (?:prizes?|rewards?))\b/.test(
+            sentence,
+          ),
+      ) &&
+      hasRequest(
+        text,
+        "claim|redeem|click|visit|verify|register|pay|send|enter|act",
+        "[a-z0-9]+",
+      ),
+  },
+  {
+    id: "contact-isolation",
+    label: "Discourages contacting your bank",
+    explanation:
+      "The message tells you not to contact your bank or customer support, discouraging independent checks.",
+    weight: WEIGHTS.isolation,
+    category: "banking",
+    group: "isolation",
+    matches: ({ sentences }) =>
+      sentences.some(
+        (sentence) =>
+          /\b(?:do not|don't|never|avoid)\s+(?:contact(?:ing)?|call(?:ing)?|inform(?:ing)?|notify(?:ing)?)\b.{0,55}\b(?:bank|customer (?:support|service)|support team)\b/.test(
+            sentence,
+          ) &&
+          !/\b(?:unknown|unverified) (?:phone )?numbers?\b|\bnumbers? (?:in|from|provided in) (?:this|the) message\b|\b(?:scammers?|fraudsters?) (?:may |will )?(?:say|tell|ask)\b/.test(
+            sentence,
+          ),
+      ),
+  },
   {
     id: "upi-pin-receive",
     label: "PIN requested to receive money",
@@ -248,17 +357,7 @@ export const TEXT_RULES: readonly TextRule[] = [
     weight: WEIGHTS.accountThreat,
     category: "banking",
     group: "pressure",
-    matches: ({ sentences }) =>
-      sentences.some(
-        (sentence) =>
-          /\baccount\b/.test(sentence) &&
-          /\b(?:will be|being|is|gets?|may be)\b.{0,30}\b(?:blocked|suspended|closed|deactivated)\b/.test(
-            sentence,
-          ) &&
-          (PRESSURE.test(sentence) ||
-            /\b(?:unless|within|now|blocked|suspended)\b/.test(sentence)) &&
-          !/\b(?:will not|not be|never|won't)\b/.test(sentence),
-      ),
+    matches: accountThreat,
   },
   {
     id: "kyc-request",
@@ -268,17 +367,21 @@ export const TEXT_RULES: readonly TextRule[] = [
     weight: WEIGHTS.verificationRequest,
     category: "kyc",
     group: "verification",
-    matches: ({ sentences }) =>
-      sentences.some(
+    matches: (context) =>
+      context.sentences.some(
         (sentence) =>
           hasRequest(
             sentence,
             "complete|update|verify|submit|confirm|renew",
             "(?:your )?kyc|know your customer",
           ) ||
-          /\bkyc\b.{0,25}\b(?:update|verification) (?:required|needed|due)\b/.test(
+          /\bkyc\b.{0,25}\b(?:update|verification) (?:is )?(?:required|needed|due)\b/.test(
             sentence,
-          ),
+          ) ||
+          (/\b(?:incomplete|pending|overdue|missing) kyc(?: verification)?\b/.test(
+            sentence,
+          ) &&
+            accountThreat(context)),
       ),
   },
   {
@@ -289,13 +392,20 @@ export const TEXT_RULES: readonly TextRule[] = [
     weight: WEIGHTS.verificationRequest,
     category: "banking",
     group: "verification",
-    matches: ({ sentences }) =>
-      sentences.some((sentence) =>
-        hasRequest(
-          sentence,
-          "verify|confirm|update",
-          "(?:your )?(?:bank |banking )?(?:account|banking details)",
-        ),
+    matches: (context) =>
+      context.sentences.some(
+        (sentence) =>
+          hasRequest(
+            sentence,
+            "verify|confirm|update",
+            "(?:your )?(?:bank |banking )?(?:account|banking details)",
+          ) ||
+          (accountThreat(context) &&
+            hasRequest(
+              sentence,
+              "verify|confirm|restore|reactivate",
+              "here|link|website|portal|https?",
+            )),
       ),
   },
   {
@@ -307,7 +417,7 @@ export const TEXT_RULES: readonly TextRule[] = [
     category: "banking",
     group: "bank_identity",
     matches: ({ text }) =>
-      /\b(?:your |our |the )?bank(?:'s)? (?:security|support|fraud|verification) team\b|\b(?:i am|we are|calling|writing) (?:from |a |your )?(?:the )?bank(?: representative| officer| support)?\b/.test(
+      /\b(?:your |our |the )?bank(?:'s)? (?:security|support|fraud|verification) team\b|\b(?:i am|we are|calling|writing) (?:from |a |your )?(?:the )?(?:[a-z]+ ){0,3}bank(?: representative| officer| support)?\b/.test(
         text,
       ) && !/\b(?:no bank|never from|not from)\b/.test(text),
   },
@@ -410,9 +520,13 @@ export const TEXT_RULES: readonly TextRule[] = [
 
 export function isRoutineNotification(text: string): boolean {
   return (
-    /\b(?:statement|transaction receipt|monthly summary)\b/.test(text) &&
-    /\b(?:available|ready|view)\b/.test(text) &&
-    /\b(?:banking app|usual banking channel|usual app)\b/.test(text)
+    (/\b(?:credit|debit) card\b.{0,70}\b(?:has been|was|is) delivered\b/.test(
+      text,
+    ) &&
+      !/\b(?:no|not|never)\b.{0,35}\bdelivered\b/.test(text)) ||
+    (/\b(?:statement|transaction receipt|monthly summary)\b/.test(text) &&
+      /\b(?:available|ready|view)\b/.test(text) &&
+      /\b(?:banking app|usual banking channel|usual app)\b/.test(text))
   );
 }
 

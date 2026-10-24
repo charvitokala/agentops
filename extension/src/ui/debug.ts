@@ -1,9 +1,11 @@
 import {
   connectToReader,
-  getMonitoringPreference,
   setMonitoringPreference,
+  openSelectedInvestigation,
 } from "./client.ts";
 import { describeSnapshot, element, renderMessages } from "./view.ts";
+import { MessageNavigation } from "./message-navigation.ts";
+import { newestFirst } from "./message-order.ts";
 
 const toggle = element<HTMLInputElement>("monitoring");
 const status = element("status");
@@ -11,13 +13,18 @@ const count = element("count");
 const messages = element("messages");
 const empty = element("empty");
 const error = element("error");
+const navigation = new MessageNavigation(
+  element("message-navigation"),
+  messages,
+);
 let disconnect = () => {};
+let source = "whatsapp";
 
 toggle.addEventListener("change", async () => {
   toggle.disabled = true;
   error.textContent = "";
   try {
-    await setMonitoringPreference(toggle.checked);
+    await setMonitoringPreference(toggle.checked, source);
   } catch {
     toggle.checked = !toggle.checked;
     error.textContent = "The monitoring preference could not be saved.";
@@ -30,29 +37,36 @@ window.addEventListener(
   () => {
     disconnect();
     messages.replaceChildren();
+    navigation.clear();
   },
   { once: true },
 );
 
 async function initialize() {
   try {
-    toggle.checked = await getMonitoringPreference();
-    toggle.disabled = false;
     const raw = new URLSearchParams(location.hash.slice(1)).get("tab");
     const tabId = Number(raw);
     if (!raw || !Number.isSafeInteger(tabId) || tabId < 0) {
       status.textContent = "No source tab selected";
       empty.textContent =
-        "Open VerdictAI from the WhatsApp Web tab and select Open debugging view.";
+        'Open VerdictAI from the WhatsApp Web tab and select "Click for More Info".';
       return;
     }
     disconnect = connectToReader(
       tabId,
       (snapshot) => {
+        source = snapshot.source ?? "whatsapp";
+        toggle.disabled = false;
         status.textContent = describeSnapshot(snapshot);
         toggle.checked = snapshot.enabled;
         count.textContent = String(snapshot.messages.length);
-        renderMessages(messages, snapshot);
+        const ordered = newestFirst(snapshot.messages);
+        renderMessages(
+          messages,
+          { ...snapshot, messages: ordered },
+          (messageId) => openSelectedInvestigation(tabId, messageId),
+        );
+        navigation.update(ordered);
         empty.hidden = snapshot.messages.length > 0;
         empty.textContent = !snapshot.enabled
           ? "Monitoring is off. Transient message data has been cleared."
@@ -64,6 +78,7 @@ async function initialize() {
         status.textContent = "Source tab unavailable";
         count.textContent = "0";
         messages.replaceChildren();
+        navigation.clear();
         empty.hidden = false;
         empty.textContent =
           "The source tab may have closed or reloaded. Open VerdictAI from WhatsApp Web again to reconnect.";

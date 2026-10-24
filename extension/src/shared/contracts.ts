@@ -8,6 +8,8 @@ export interface ExtractedMessage {
   direction: "incoming" | "outgoing" | "unknown";
   /** First observed in the current rendered-message window, not a sent timestamp. */
   observedAt: string;
+  /** Gmail header data, kept transient alongside the currently opened body. */
+  email?: { sender: string; subject: string };
 }
 
 export interface ActiveConversation {
@@ -17,6 +19,7 @@ export interface ActiveConversation {
 }
 
 export interface MonitoringSnapshot {
+  source?: "whatsapp" | "gmail";
   enabled: boolean;
   status:
     | "disabled"
@@ -31,6 +34,7 @@ export interface MonitoringSnapshot {
 }
 
 export const MONITORING_KEY = "monitoringEnabled";
+export const GMAIL_MONITORING_KEY = "gmailMonitoringEnabled";
 export const PORT_NAME = "verdictai-reader-v1";
 
 export function emptySnapshot(enabled = false): MonitoringSnapshot {
@@ -49,6 +53,8 @@ export function isSnapshot(value: unknown): value is MonitoringSnapshot {
   const item = value as Record<string, unknown>;
   const conversation = item.conversation as Record<string, unknown> | null;
   return (
+    (item.source === undefined ||
+      ["whatsapp", "gmail"].includes(String(item.source))) &&
     typeof item.enabled === "boolean" &&
     [
       "disabled",
@@ -72,6 +78,13 @@ export function isSnapshot(value: unknown): value is MonitoringSnapshot {
         typeof data.id === "string" &&
         typeof data.text === "string" &&
         typeof data.observedAt === "string" &&
+        (data.email === undefined ||
+          (data.email !== null &&
+            typeof data.email === "object" &&
+            typeof (data.email as Record<string, unknown>).sender ===
+              "string" &&
+            typeof (data.email as Record<string, unknown>).subject ===
+              "string")) &&
         ["incoming", "outgoing", "unknown"].includes(String(data.direction)) &&
         Array.isArray(data.urls) &&
         data.urls.every((url: unknown) => typeof url === "string")

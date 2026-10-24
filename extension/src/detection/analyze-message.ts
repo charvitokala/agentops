@@ -9,13 +9,14 @@ import {
   isProtectiveAdvice,
   isRoutineNotification,
   normalizeText,
-  PRESSURE,
+  hasPressure,
   SCORING,
   TEXT_RULES,
   WEIGHTS,
 } from "./rules.ts";
 import { analyzeUrls } from "./url-analysis.ts";
 import { recommendActions } from "./recommendations.ts";
+import { applyContextScore } from "./context-scoring.ts";
 
 export function classifyRisk(
   score: number,
@@ -34,6 +35,12 @@ function summarize(
   protective: boolean,
 ): string {
   const ids = new Set(signals.map((signal) => signal.id));
+  if (ids.has("account-unlock-fee"))
+    return "This message asks you to pay to unlock or verify an account. Check with your bank before paying.";
+  if (ids.has("reward-payment"))
+    return "This message asks you to pay before receiving a reward. Do not send money without checking the offer independently.";
+  if (ids.has("reward-promise"))
+    return "This message promises a prize or cashback and asks you to act. Check the offer independently before proceeding.";
   if (ids.has("upi-pin-receive"))
     return "This message asks for a UPI PIN to receive money. Pause before following these payment instructions.";
   if (ids.has("credential-request"))
@@ -54,6 +61,8 @@ function summarize(
     return "This message links a payment approval to receiving money. Check before approving it.";
   if (ids.has("account-threat"))
     return "This message threatens to block your account and asks you to act. Check the request in your usual banking app.";
+  if (ids.has("contact-isolation"))
+    return "This message discourages contacting your bank or support. Check independently through a channel you already know.";
   if (ids.has("policy-cancellation") || ids.has("policy-renewal-demand"))
     return "This message pressures you about your insurance policy. Check with your insurer before paying.";
   if (ids.has("url-pattern"))
@@ -102,7 +111,7 @@ export function analyzeMessage(
     signals.length &&
     !grouped.has("pressure") &&
     !grouped.has("policy_pressure") &&
-    PRESSURE.test(text)
+    hasPressure(text)
   )
     signals.push({
       id: "urgency",
@@ -111,10 +120,7 @@ export function analyzeMessage(
         "The message uses urgency or limited-time wording alongside another warning sign.",
       weight: WEIGHTS.urgency,
     });
-  const riskScore = Math.min(
-    SCORING.maximum,
-    signals.reduce((sum, signal) => sum + signal.weight, 0),
-  );
+  const riskScore = applyContextScore(message, signals);
   const protective = isProtectiveAdvice(text);
   // Clear routine notices/advice can have zero indicators. This is never a safety verdict.
   const routine = isRoutineNotification(text);

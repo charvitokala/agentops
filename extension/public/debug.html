@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Local WhatsApp Reader · VerdictAI Guardian</title>
+    <title>Message Verdict · VerdictAI Guardian</title>
     <link rel="stylesheet" href="ui.css" />
     <script type="module" src="debug.js"></script>
   </head>
@@ -31,51 +31,62 @@
             stroke-linejoin="round"
           />
         </svg>
-        <div>VerdictAI<span>GUARDIAN · PHASE 1D</span></div>
+        <div>VerdictAI</div>
       </header>
-      <h1>Local WhatsApp reader</h1>
-      <p class="intro">
-        This debugging view displays locally extracted WhatsApp Web content from
-        one source tab. Nothing is uploaded. Preliminary checks use local rules;
-        no AI agents run.
-      </p>
-      <section class="card controls" aria-labelledby="monitoring-heading">
-        <div class="toggle-row">
-          <div>
-            <h2 id="monitoring-heading">Message monitoring</h2>
-            <p>Applies to the open conversation in each WhatsApp Web tab.</p>
-          </div>
-          <label class="switch"
-            ><input
-              id="monitoring"
-              type="checkbox"
-              role="switch"
-              aria-label="Enable WhatsApp message monitoring"
-              disabled /><span aria-hidden="true"></span
-          ></label>
+      <h1>Message Verdict</h1>
+      <p class="intro">None of your data is being uploaded.</p>
+      <div class="verdict-layout">
+        <aside
+          class="message-navigation"
+          aria-labelledby="message-navigation-heading"
+          hidden
+        >
+          <h2 id="message-navigation-heading">Messages</h2>
+          <nav id="message-navigation" aria-label="Analyzed messages"></nav>
+        </aside>
+        <div class="verdict-content">
+          <section class="card controls" aria-labelledby="monitoring-heading">
+            <div class="toggle-row">
+              <div>
+                <h2 id="monitoring-heading">Message monitoring</h2>
+                <p>
+                  Applies to the open conversation in each WhatsApp Web tab.
+                </p>
+              </div>
+              <label class="switch"
+                ><input
+                  id="monitoring"
+                  type="checkbox"
+                  role="switch"
+                  aria-label="Enable WhatsApp message monitoring"
+                  disabled /><span aria-hidden="true"></span
+              ></label>
+            </div>
+            <p id="status" class="status" role="status">
+              Connecting to the source tab…
+            </p>
+            <div class="count-row">
+              <span>Currently rendered text messages</span
+              ><strong id="count">0</strong>
+            </div>
+          </section>
+          <p class="privacy">
+            Only messages available in the current DOM are shown. This is not a
+            complete chat history. URLs are plain text and are never opened.
+            Observation times are not sent times.
+          </p>
+          <p id="error" class="error" role="alert"></p>
+          <p id="empty" class="card empty" role="status">
+            Waiting for the source tab. Monitoring is disabled until you enable
+            it.
+          </p>
+          <section
+            id="messages"
+            class="messages"
+            aria-label="Extracted messages"
+          ></section>
         </div>
-        <p id="status" class="status" role="status">
-          Connecting to the source tab…
-        </p>
-        <div class="count-row">
-          <span>Currently rendered text messages</span
-          ><strong id="count">0</strong>
-        </div>
-      </section>
-      <p class="privacy">
-        Only messages available in the current DOM are shown. This is not a
-        complete chat history. URLs are plain text and are never opened.
-        Observation times are not sent times.
-      </p>
-      <p id="error" class="error" role="alert"></p>
-      <p id="empty" class="card empty" role="status">
-        Waiting for the source tab. Monitoring is disabled until you enable it.
-      </p>
-      <section
-        id="messages"
-        class="messages"
-        aria-label="Extracted messages"
-      ></section>
+      </div>
     </main>
   </body>
 </html>

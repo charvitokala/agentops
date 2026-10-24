@@ -36,15 +36,15 @@
       <section class="card controls" aria-labelledby="monitoring-heading">
         <div class="toggle-row">
           <div>
-            <h1 id="monitoring-heading">WhatsApp monitoring</h1>
-            <p>Off by default. You stay in control.</p>
+            <h1 id="monitoring-heading">Allow reading access</h1>
+            <p>Read messages only when enabled.</p>
           </div>
           <label class="switch"
             ><input
               id="monitoring"
               type="checkbox"
               role="switch"
-              aria-label="Enable WhatsApp message monitoring"
+              aria-label="Allow reading access"
               disabled /><span aria-hidden="true"></span
           ></label>
         </div>
@@ -52,9 +52,16 @@
         <div class="count-row">
           <span>Rendered text messages</span><strong id="count">0</strong>
         </div>
+        <div id="latest-risk" class="latest-risk" role="status" hidden>
+          <h2>Latest Message Risk</h2>
+          <p
+            class="latest-risk-value"
+            title="Rule-based risk score, not a fraud probability."
+          ></p>
+        </div>
       </section>
       <button id="open-debug" class="primary" type="button" disabled>
-        Open debugging view
+        Click for More Info
       </button>
       <p id="error" class="error" role="alert"></p>
       <p class="privacy">

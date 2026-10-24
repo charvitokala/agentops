@@ -39,7 +39,7 @@ button {
   padding: 24px;
 }
 .debug main {
-  max-width: 900px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 40px 24px;
 }
@@ -166,6 +166,26 @@ button {
   font-size: 22px;
   font-weight: 600;
 }
+.latest-risk {
+  margin-top: 16px;
+}
+.controls .latest-risk-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #6e6e73;
+}
+.controls .latest-risk-value[data-risk="low"] {
+  color: #155e36;
+}
+.controls .latest-risk-value[data-risk="medium"] {
+  color: #80590e;
+}
+.controls .latest-risk-value[data-risk="high"] {
+  color: #a42f2a;
+}
+.controls .latest-risk-value[data-risk="insufficient_evidence"] {
+  color: #55555c;
+}
 .primary {
   margin-top: 18px;
   min-height: 44px;
@@ -204,65 +224,185 @@ button {
   margin-top: 24px;
   font-size: 14px;
 }
+.verdict-layout {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.verdict-content {
+  min-width: 0;
+}
+.message-navigation {
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: #e5e5ea;
+  border-radius: 20px;
+  padding: 12px;
+}
+.message-navigation h2 {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 5px 12px;
+}
+.message-navigation nav {
+  display: grid;
+  gap: 8px;
+}
+.message-nav-item {
+  width: 100%;
+  text-align: left;
+  padding: 13px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  background: #ffffff;
+  color: #1d1d1f;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.message-nav-item:hover {
+  background: #f5f5f7;
+}
+.message-nav-item[aria-current="true"] {
+  border-color: #111111;
+  font-weight: 600;
+}
 .messages {
   display: grid;
-  gap: 16px;
+  gap: 40px;
   margin-top: 24px;
 }
-.message-meta {
+.message-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  min-width: 0;
+  scroll-margin-top: 24px;
+}
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr) minmax(0, 0.85fr);
+  grid-template-areas: "message risk score" "message defender prosecutor" "summary actions actions";
+  gap: 18px;
+  align-items: stretch;
+}
+.dashboard-card {
+  border-radius: 26px;
+  padding: 24px;
+  min-width: 0;
+}
+.dashboard-card h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+.card-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
   gap: 10px;
-  font-size: 12px;
-  color: #6e6e73;
 }
-.badge {
-  display: inline-block;
-  border: 1px solid #e5e5ea;
-  border-radius: 7px;
-  padding: 3px 8px;
-  font-size: 11px;
+.card-icon {
+  flex: 0 0 24px;
+}
+.dashboard-card .assessment-explanation-heading {
+  font-size: 23px;
+  font-weight: 600;
+}
+.risk-status-card .card-heading {
+  justify-content: center;
+}
+.perspective-card li {
+  margin-top: 7px;
+}
+.original-message-card {
+  grid-area: message;
+}
+.message-summary-card {
+  grid-area: summary;
+}
+.risk-status-card {
+  grid-area: risk;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+.score-card {
+  grid-area: score;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.defender-card {
+  grid-area: defender;
+}
+.prosecutor-card {
+  grid-area: prosecutor;
+}
+.actions-card {
+  grid-area: actions;
 }
 .message-text {
-  margin-top: 18px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 15px;
   line-height: 1.8;
+  max-height: 560px;
+  overflow-y: auto;
 }
-.message-card h3 {
+.email-sender {
   font-size: 12px;
-  margin-top: 20px;
-  font-weight: 600;
+  color: #6e6e73;
+  overflow-wrap: anywhere;
+  margin-bottom: 12px;
+}
+.content-summary {
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
 }
 .message-card .secondary {
   color: #6e6e73;
   font-size: 12px;
   margin-top: 6px;
 }
-.message-card ul {
+.message-card ul,
+.message-card ol {
   padding-left: 18px;
-  margin: 8px 0 0;
+  margin: 14px 0 0;
 }
 .message-card li {
-  font-size: 12px;
+  font-size: 13px;
   overflow-wrap: anywhere;
+  margin-top: 10px;
+}
+.message-card li p {
+  color: #6e6e73;
+  margin-top: 4px;
+  line-height: 1.7;
 }
 .message-card code {
   font-family: inherit;
 }
-.preliminary-assessment {
-  border-top: 1px solid #e5e5ea;
-  border-bottom: 1px solid #e5e5ea;
-  margin-top: 20px;
-  padding-bottom: 18px;
-}
-.assessment-risk {
-  margin-top: 12px;
-  font-size: 12px;
+.assessment-explanation-heading {
+  font-size: 23px;
   font-weight: 600;
+  line-height: 1.35;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.risk-status-value {
+  font-size: clamp(24px, 2.5vw, 34px);
+  font-weight: 650;
+  line-height: 1.2;
+}
+.risk-caution {
+  font-size: 12px;
+  margin-top: 16px;
 }
 .risk-high {
   color: #a42f2a;
@@ -281,33 +421,90 @@ button {
 }
 .risk-insufficient_evidence {
   color: #55555c;
-  background: #f5f5f7;
+  background: #f0f0f3;
 }
-.assessment-category {
-  color: #6e6e73;
+.fraud-risk-score-value {
+  font-size: clamp(44px, 5vw, 64px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -2px;
+  margin-bottom: 12px;
+}
+.technical-details {
+  margin-top: 14px;
+  padding: 16px 20px;
   font-size: 12px;
-  margin-top: 8px;
+}
+.technical-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.technical-details h3 {
+  font-size: 12px;
+  margin-top: 16px;
+}
+.message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #6e6e73;
+  margin-top: 16px;
+}
+.badge {
+  display: inline-block;
+  border: 1px solid #e5e5ea;
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 11px;
 }
 .assessment-summary {
-  font-size: 14px;
-  line-height: 1.8;
-  margin-top: 12px;
+  margin-top: 10px;
+  font-size: 13px;
 }
-.preliminary-assessment h4 {
-  font-size: 12px;
-  font-weight: 600;
-  margin: 16px 0 6px;
+@media (min-width: 1001px) {
+  .debug .brand,
+  .debug > main > h1,
+  .debug .intro {
+    margin-left: 234px;
+  }
 }
-.preliminary-assessment li {
-  margin-top: 6px;
+@media (max-width: 1100px) {
+  .verdict-layout {
+    grid-template-columns: 170px minmax(0, 1fr);
+    gap: 18px;
+  }
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "message message" "risk score" "defender prosecutor" "summary summary" "actions actions";
+  }
+  .dashboard-card {
+    padding: 22px;
+  }
 }
-.preliminary-assessment li p {
-  color: #6e6e73;
-  margin-top: 3px;
-}
-.preliminary-assessment ol {
-  padding-left: 18px;
-  margin: 8px 0 12px;
+@media (max-width: 700px) {
+  .verdict-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .message-navigation {
+    position: static;
+    max-height: 220px;
+  }
+  .message-navigation nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "message" "risk" "score" "defender" "prosecutor" "summary" "actions";
+  }
+  .dashboard-card {
+    border-radius: 22px;
+  }
+  .risk-status-card,
+  .score-card {
+    min-height: 170px;
+  }
 }
 @media (max-width: 500px) {
   .debug main {

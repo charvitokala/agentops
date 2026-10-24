@@ -1,7 +1,12 @@
 import type { AssessedSnapshot } from "./assessment-pipeline.ts";
 import type { RenderedMessageBinding } from "./whatsapp-reader.ts";
 import { NOTE_ATTRIBUTE } from "./ownership.ts";
-import { SELECTORS } from "./selectors.ts";
+import {
+  findNotePlacement,
+  noteIsAttached,
+  samePlacement,
+} from "./note-placement.ts";
+import type { NotePlacement } from "./note-placement.ts";
 
 export type InlineDiagnostic =
   | "unreliable-message-binding"
@@ -15,24 +20,15 @@ interface InlineOptions {
 }
 interface Note {
   host: HTMLElement;
-  anchor: Element;
+  placement: NotePlacement;
   bubble: Element;
   signature: string;
-}
-
-function safeParent(element: Element): boolean {
-  const style = element.ownerDocument.defaultView?.getComputedStyle(element);
-  return (
-    !style ||
-    !style.display ||
-    ["block", "flow-root", "list-item", "table-cell"].includes(style.display) ||
-    (style.display === "flex" && style.flexDirection.startsWith("column"))
-  );
 }
 
 export class InlineNotes {
   private readonly notes = new Map<string, Note>();
   private readonly reported = new Set<InlineDiagnostic>();
+  private root: Element | null = null;
   private readonly options: InlineOptions;
   constructor(options: InlineOptions) {
     this.options = options;
@@ -44,23 +40,23 @@ export class InlineNotes {
   }
   clear(): void {
     for (const note of this.notes.values()) note.host.remove();
+    this.root
+      ?.querySelectorAll(`[${NOTE_ATTRIBUTE}]`)
+      .forEach((host) => host.remove());
     this.notes.clear();
+    this.root = null;
   }
 
   pruneStale(resolve: (id: string) => RenderedMessageBinding | null): void {
     for (const [id, note] of this.notes) {
       const binding = resolve(id);
+      const placement = binding ? findNotePlacement(binding) : null;
       if (
         !binding ||
         binding.bubble !== note.bubble ||
-        !note.host.isConnected ||
-        note.host.previousElementSibling !== note.anchor ||
-        !note.anchor.parentElement ||
-        !safeParent(note.anchor.parentElement) ||
-        ["absolute", "fixed"].includes(
-          note.anchor.ownerDocument.defaultView?.getComputedStyle(note.anchor)
-            .position ?? "",
-        )
+        !placement ||
+        !samePlacement(placement, note.placement) ||
+        !noteIsAttached(note.host, placement)
       ) {
         note.host.remove();
         this.notes.delete(id);
@@ -72,6 +68,29 @@ export class InlineNotes {
     snapshot: AssessedSnapshot,
     resolve: (id: string) => RenderedMessageBinding | null,
   ): void {
+    if (!snapshot.enabled || snapshot.status !== "ready") {
+      this.clear();
+      return;
+    }
+    // Virtualized DOM clones can copy our host marker without its Shadow DOM.
+    // Remove these untracked copies only inside a verified conversation root.
+    const roots = new Set<Element>();
+    if (this.root) roots.add(this.root);
+    this.root = null;
+    for (const message of snapshot.messages) {
+      const binding = resolve(message.id);
+      if (binding && binding.conversationId === snapshot.conversation?.id) {
+        this.root = binding.root;
+        roots.add(binding.root);
+        break;
+      }
+    }
+    const ownedHosts = new Set(
+      [...this.notes.values()].map((note) => note.host),
+    );
+    for (const root of roots)
+      for (const host of root.querySelectorAll(`[${NOTE_ATTRIBUTE}]`))
+        if (!ownedHosts.has(host as HTMLElement)) host.remove();
     const retained = new Set<string>();
     const messages = new Map(
       snapshot.messages.map((message) => [message.id, message]),
@@ -100,45 +119,10 @@ export class InlineNotes {
           continue;
         }
         const bubble = binding.bubble;
-        if (
-          ["absolute", "fixed"].includes(
-            bubble.ownerDocument.defaultView?.getComputedStyle(bubble)
-              .position ?? "",
-          )
-        ) {
+        const placement = findNotePlacement(binding);
+        if (!placement) {
           this.diagnostic("unsupported-message-layout");
           continue;
-        }
-        let anchor = bubble;
-        let parent = anchor.parentElement;
-        if (!parent) continue;
-        if (!safeParent(parent)) {
-          const row = bubble.closest('[role="row"]');
-          const candidates = row
-            ? [...row.querySelectorAll(SELECTORS.message)].filter(
-                (node) =>
-                  !node.parentElement?.closest(SELECTORS.message) ||
-                  !row.contains(node.parentElement.closest(SELECTORS.message)),
-              )
-            : [];
-          if (
-            !row ||
-            row === binding.root ||
-            !binding.root.contains(row) ||
-            candidates.length !== 1 ||
-            candidates[0] !== bubble ||
-            !row.parentElement ||
-            ["absolute", "fixed"].includes(
-              row.ownerDocument.defaultView?.getComputedStyle(row).position ??
-                "",
-            ) ||
-            !safeParent(row.parentElement)
-          ) {
-            this.diagnostic("unsupported-message-layout");
-            continue;
-          }
-          anchor = row;
-          parent = row.parentElement;
         }
         const signature = JSON.stringify([
           assessment.riskLevel,
@@ -147,15 +131,15 @@ export class InlineNotes {
         const existing = this.notes.get(message.id);
         retained.add(message.id);
         if (
-          existing?.anchor === anchor &&
+          existing &&
+          samePlacement(existing.placement, placement) &&
           existing.bubble === bubble &&
-          existing.host.isConnected &&
-          existing.host.previousElementSibling === anchor &&
+          noteIsAttached(existing.host, placement) &&
           existing.signature === signature
         )
           continue;
         existing?.host.remove();
-        const document = anchor.ownerDocument;
+        const document = bubble.ownerDocument;
         const host = document.createElement("div");
         host.setAttribute(NOTE_ATTRIBUTE, "");
         host.style.cssText =
@@ -234,8 +218,9 @@ export class InlineNotes {
         );
         note.append(brand, summary, label, button, error);
         shadow.append(style, note);
-        anchor.after(host);
-        this.notes.set(message.id, { host, anchor, bubble, signature });
+        if (placement.after) placement.after.after(host);
+        else placement.container.append(host);
+        this.notes.set(message.id, { host, placement, bubble, signature });
       }
     for (const [id, note] of this.notes)
       if (!retained.has(id)) {

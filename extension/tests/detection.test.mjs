@@ -424,3 +424,164 @@ test("numerical upfront-payment requests do not require the literal word fee", (
     0,
   );
 });
+
+const warningEmail = `Subject: FINAL WARNING: Your Bank Account Will Be BLOCKED in 30 Minutes!
+Incomplete KYC verification.
+Account suspension in 30 minutes.
+Visit https://urgent-bank-kyc.example`;
+
+test("the supplied final-warning email is high risk with a consistent non-maximal score", () => {
+  const result = assess(warningEmail);
+  assert.equal(result.riskLevel, "high");
+  assert.equal(result.riskScore, 65);
+  for (const id of ["account-threat", "kyc-request", "url-pattern"])
+    assert.ok(
+      result.signals.some((signal) => signal.id === id),
+      id,
+    );
+  assert.ok(
+    result.recommendedActions.some((action) => /KYC request/.test(action)),
+  );
+  assert.ok(
+    result.recommendedActions.some((action) =>
+      /Do not open the link/.test(action),
+    ),
+  );
+  assert.equal(
+    assess(warningEmail.replace(/^Subject:.*\n/, "")).riskLevel,
+    "high",
+  );
+});
+
+for (const [name, text, expectedSignal] of [
+  [
+    "bank impersonation and OTP request",
+    "I am from HDFC Bank. Send me your OTP.",
+    "critical-combination",
+  ],
+  [
+    "bank impersonation and CVV request",
+    "We are from the bank. Provide your CVV.",
+    "credential-request",
+  ],
+  [
+    "bank impersonation and banking login request",
+    "We are from Example Bank. Send your banking login details.",
+    "credential-request",
+  ],
+  [
+    "account threat and ordinary-host verification link",
+    "Account blocked in 30 minutes. Verify your account at https://notice.example/check immediately.",
+    "critical-combination",
+  ],
+  [
+    "urgent prize and advance fee",
+    "Guaranteed prize! Act immediately. Pay a fee first to claim your reward.",
+    "reward-payment",
+  ],
+  [
+    "urgent cashback and account activation fee",
+    "Guaranteed cashback! Act immediately. Pay a verification fee to unlock your account and claim your cashback.",
+    "account-unlock-fee",
+  ],
+  [
+    "isolation combined with credential theft",
+    "Do not contact your bank or customer support. Send me your PIN.",
+    "contact-isolation",
+  ],
+  [
+    "linked banking form requests OTP on another line",
+    "Visit https://secure-bank-login.example\nEnter your OTP and password in the form.",
+    "credential-request",
+  ],
+])
+  test(name, () => {
+    const result = assess(text);
+    assert.equal(result.riskLevel, "high", text);
+    assert.ok(result.riskScore >= 60 && result.riskScore <= 100);
+    assert.ok(result.signals.some((signal) => signal.id === expectedSignal));
+    assert.equal(
+      result.riskScore,
+      Math.min(
+        100,
+        result.signals.reduce((total, signal) => total + signal.weight, 0),
+      ),
+    );
+    assert.ok(result.recommendedActions.length > 0);
+  });
+
+test("critical combination tops up to 60 instead of arbitrarily assigning 100", () => {
+  const result = assess("I am from your bank. Send me your OTP.");
+  assert.equal(result.riskScore, 60);
+  assert.equal(
+    result.signals.find((signal) => signal.id === "critical-combination")
+      .weight,
+    5,
+  );
+  assert.equal(assess("Send me your OTP immediately.").riskLevel, "medium");
+  assert.equal(assess("Send me your OTP immediately.").riskScore, 55);
+});
+
+test("fees, reward promises and isolation alone are assessed without automatic high risk", () => {
+  const fee = assess("A verification fee is required to unlock your account.");
+  assert.equal(fee.riskLevel, "medium");
+  assert.ok(
+    fee.recommendedActions.some((action) =>
+      /Do not pay fees to unlock/.test(action),
+    ),
+  );
+  const reward = assess("Guaranteed cashback. Click here to claim.");
+  assert.equal(reward.riskLevel, "low");
+  assert.ok(reward.signals.some((signal) => signal.id === "reward-promise"));
+  assert.equal(
+    assess("Do not contact your bank or customer support.").riskLevel,
+    "low",
+  );
+});
+
+for (const text of [
+  "Never share your OTP.",
+  "Never share your PIN, password or CVV.",
+  "Do not send your banking login details.",
+  "Your credit card has been delivered.",
+  "Your account will not be blocked. KYC verification is not required.",
+  "Never pay a fee to unlock your account.",
+  "Do not pay a fee to claim a guaranteed prize.",
+  "Do not contact your bank using the number in this message.",
+  "Your monthly account statement is available in your usual banking app.",
+  "Bank OTP KYC.",
+  "Act immediately.",
+])
+  test(`non-threatening or protective wording: ${text}`, () => {
+    const result = assess(text);
+    assert.equal(result.riskScore, 0);
+    assert.ok(["low", "insufficient_evidence"].includes(result.riskLevel));
+  });
+
+test("delivery notices remain low indicators and isolated URL features are not proof of fraud", () => {
+  assert.equal(assess("Your credit card has been delivered.").riskLevel, "low");
+  assert.equal(assess("https://urgent-bank-kyc.example").riskScore, 25);
+  assert.equal(assess("https://urgent-bank-kyc.example").riskLevel, "low");
+  assert.match(
+    assess("https://urgent-bank-kyc.example").signals[0].explanation,
+    /not proof of fraud/,
+  );
+  assert.equal(
+    assess("Bank notice. https://unfamiliar.example/login").riskScore,
+    0,
+  );
+});
+
+test("repeated critical wording does not multiply signals or combination boosts", () => {
+  const once = assess("I am from your bank. Send me your OTP.");
+  const repeated = assess(
+    "I am from your bank. Send me your OTP. I am from your bank. Send me your OTP.",
+  );
+  assert.equal(repeated.riskScore, once.riskScore);
+  assert.equal(
+    repeated.signals.filter((signal) => signal.id === "critical-combination")
+      .length,
+    1,
+  );
+  assert.ok(isPreliminaryAssessment(repeated));
+});

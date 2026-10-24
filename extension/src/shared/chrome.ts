@@ -61,6 +61,7 @@ declare global {
         currentWindow: boolean;
       }): Promise<{ id?: number }[]>;
       connect(tabId: number, options: { name: string }): ChromePort;
+      sendMessage(tabId: number, message: unknown): Promise<unknown>;
       create(properties: { url: string }): Promise<{ id?: number }>;
       onRemoved: ChromeEvent<(tabId: number) => void>;
     };

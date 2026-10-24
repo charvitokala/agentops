@@ -4,7 +4,7 @@ import type {
 } from "../shared/contracts.ts";
 import { SELECTORS } from "./selectors.ts";
 
-function createVisibilityCheck(): (element: Element) => boolean {
+export function createVisibilityCheck(): (element: Element) => boolean {
   // Per-scan cache avoids repeating computed-style work for shared ancestors.
   const cache = new WeakMap<Element, boolean>();
   function check(element: Element): boolean {

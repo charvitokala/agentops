@@ -22,6 +22,9 @@ import {
 import { waitFor } from "./helpers.mjs";
 import { fixture, message } from "./helpers.mjs";
 import { startContentController } from "../src/content/controller.ts";
+import { renderMessages } from "../src/ui/view.ts";
+import { openSelectedInvestigation } from "../src/ui/client.ts";
+import { PORT_NAME } from "../src/shared/contracts.ts";
 
 const origin = "http://localhost:3000";
 const id = "ext-3917fa9e-b4a7-407d-ad62-648ca0585d86";
@@ -428,106 +431,170 @@ test("bridge never claims a case on unrelated origins or another website route",
   }
 });
 
-test("actual More Info click flows through the controller, broker, new tab, bridge and website storage", async () => {
-  const source = fixture();
-  const document = source.window.document;
-  const wanted = "Pay an advance fee first to receive your refund.";
-  document
-    .querySelector('[data-testid="conversation-panel-messages"]')
-    .replaceChildren(
-      message(document, {
-        id: "other-message",
-        text: "Your bank security team needs your OTP immediately.",
-      }),
-      message(document, { id: "selected-refund", text: wanted }),
-    );
-  let site;
-  let stopBridge;
-  let stopReceiver;
-  let delivered;
-  const app = brokerFixture({
-    openTab: async (url) => {
-      site = new JSDOM("<main></main>", { url });
-      loopback(site.window);
-      const caseId = site.window.location.pathname.split("/").at(-1);
-      stopBridge = installWebsiteBridge(site.window, origin, (caseId) =>
-        app.broker.handle(
-          { type: "VERDICTAI_CLAIM_CASE", caseId },
-          targetSender(caseId),
-        ),
+for (const entryPoint of ["inline", "debug"])
+  test(`${entryPoint} More Info click flows through the controller, broker, new tab, bridge and website storage`, async () => {
+    const source = fixture();
+    const document = source.window.document;
+    const wanted = "Pay an advance fee first to receive your refund.";
+    const selectedBubble = message(document, {
+      id: "selected-refund",
+      text: wanted,
+    });
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "row";
+    wrapper.append(selectedBubble);
+    if (entryPoint === "debug") {
+      // No reliable vertical placement: debug navigation must still work.
+      selectedBubble.style.display = "flex";
+      selectedBubble.style.flexDirection = "row";
+    }
+    document
+      .querySelector('[data-testid="conversation-panel-messages"]')
+      .replaceChildren(
+        message(document, {
+          id: "other-message",
+          text: "Your bank security team needs your OTP immediately.",
+        }),
+        wrapper,
       );
-      stopReceiver = receiveExtensionCase(
-        site.window,
-        caseId,
-        (payload) => {
-          delivered = payload;
+    let site;
+    let stopBridge;
+    let stopReceiver;
+    let delivered;
+    const app = brokerFixture({
+      openTab: async (url) => {
+        site = new JSDOM("<main></main>", { url });
+        loopback(site.window);
+        const caseId = site.window.location.pathname.split("/").at(-1);
+        stopBridge = installWebsiteBridge(site.window, origin, (caseId) =>
+          app.broker.handle(
+            { type: "VERDICTAI_CLAIM_CASE", caseId },
+            targetSender(caseId),
+          ),
+        );
+        stopReceiver = receiveExtensionCase(
+          site.window,
+          caseId,
+          (payload) => {
+            delivered = payload;
+          },
+          (error) => {
+            throw new Error(error);
+          },
+        );
+        return { id: 77 };
+      },
+    });
+    function event() {
+      const listeners = new Set();
+      return {
+        addListener: (fn) => listeners.add(fn),
+        removeListener: (fn) => listeners.delete(fn),
+        emit: (...args) => {
+          for (const fn of listeners) fn(...args);
         },
-        (error) => {
-          throw new Error(error);
+      };
+    }
+    const oldChrome = Object.getOwnPropertyDescriptor(globalThis, "chrome");
+    const oldDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+    Object.defineProperty(globalThis, "chrome", {
+      configurable: true,
+      value: {
+        runtime: {
+          id: "extension-id",
+          onConnect: event(),
+          onMessage: event(),
+          getURL: (path) => `chrome-extension://extension-id/${path}`,
+          sendMessage: (request) => app.broker.handle(request, sender),
         },
-      );
-      return { id: 77 };
-    },
-  });
-  function event() {
-    const listeners = new Set();
-    return {
-      addListener: (fn) => listeners.add(fn),
-      removeListener: (fn) => listeners.delete(fn),
-    };
-  }
-  const oldChrome = Object.getOwnPropertyDescriptor(globalThis, "chrome");
-  Object.defineProperty(globalThis, "chrome", {
-    configurable: true,
-    value: {
-      runtime: {
+        tabs: {
+          sendMessage: async (tabId, request) => {
+            assert.equal(tabId, sender.tab.id);
+            return new Promise((resolve) =>
+              globalThis.chrome.runtime.onMessage.emit(
+                request,
+                {
+                  id: "extension-id",
+                  url: "chrome-extension://extension-id/debug.html",
+                },
+                resolve,
+              ),
+            );
+          },
+        },
+        storage: {
+          local: { get: async () => ({ monitoringEnabled: true }) },
+          onChanged: event(),
+        },
+      },
+    });
+    const stopController = startContentController(document, {
+      activationAllowed: () => true,
+    });
+    let snapshot;
+    globalThis.chrome.runtime.onConnect.emit({
+      name: PORT_NAME,
+      sender: {
         id: "extension-id",
-        onConnect: event(),
-        getURL: (path) => `chrome-extension://extension-id/${path}`,
-        sendMessage: (request) => app.broker.handle(request, sender),
+        url: "chrome-extension://extension-id/debug.html",
       },
-      storage: {
-        local: { get: async () => ({ monitoringEnabled: true }) },
-        onChanged: event(),
+      postMessage: (value) => {
+        snapshot = value;
       },
-    },
+      onDisconnect: event(),
+      disconnect: () => {},
+    });
+    const debug = new JSDOM("<main></main>");
+    try {
+      await waitFor(() => snapshot?.enabled && snapshot.messages.length === 2);
+      if (entryPoint === "inline") {
+        const notes = document.querySelectorAll("[data-verdictai-note]");
+        assert.equal(notes.length, 2);
+        assert.equal(notes[1].parentElement, selectedBubble);
+        notes[1].shadowRoot.querySelector("button").click();
+      } else {
+        assert.equal(
+          selectedBubble.querySelector("[data-verdictai-note]"),
+          null,
+        );
+        Object.defineProperty(globalThis, "document", {
+          configurable: true,
+          value: debug.window.document,
+        });
+        const list = debug.window.document.querySelector("main");
+        renderMessages(list, snapshot, (messageId) =>
+          openSelectedInvestigation(sender.tab.id, messageId),
+        );
+        list.querySelectorAll("button")[1].click();
+      }
+      await waitFor(() => !!delivered);
+      assert.equal(delivered.message.text, wanted);
+      assert.equal(delivered.assessment.riskLevel, "medium");
+      assert.equal(delivered.assessment.category, "upi");
+      assert.equal(extensionCaseToScamCase(delivered).message.text, wanted);
+      assert.ok(!JSON.stringify(delivered).includes("security team"));
+      assert.equal(
+        site.window.location.pathname,
+        `/investigation/${delivered.caseId}`,
+      );
+      assert.equal(site.window.location.search, "");
+      assert.equal(site.window.location.hash, "");
+      assert.deepEqual(app.data, {});
+    } finally {
+      stopController();
+      stopReceiver?.();
+      stopBridge?.();
+      source.window.close();
+      debug.window.close();
+      site?.window.close();
+      if (oldChrome) Object.defineProperty(globalThis, "chrome", oldChrome);
+      else Reflect.deleteProperty(globalThis, "chrome");
+      if (oldDocument)
+        Object.defineProperty(globalThis, "document", oldDocument);
+      else Reflect.deleteProperty(globalThis, "document");
+    }
   });
-  const stopController = startContentController(document, {
-    activationAllowed: () => true,
-  });
-  try {
-    await waitFor(
-      () => document.querySelectorAll("[data-verdictai-note]").length === 2,
-    );
-    const notes = document.querySelectorAll("[data-verdictai-note]");
-    assert.equal(
-      notes[1].previousElementSibling.getAttribute("data-id"),
-      "selected-refund",
-    );
-    notes[1].shadowRoot.querySelector("button").click();
-    await waitFor(() => !!delivered);
-    assert.equal(delivered.message.text, wanted);
-    assert.equal(delivered.assessment.riskLevel, "medium");
-    assert.equal(delivered.assessment.category, "upi");
-    assert.equal(extensionCaseToScamCase(delivered).message.text, wanted);
-    assert.ok(!JSON.stringify(delivered).includes("security team"));
-    assert.equal(
-      site.window.location.pathname,
-      `/investigation/${delivered.caseId}`,
-    );
-    assert.equal(site.window.location.search, "");
-    assert.equal(site.window.location.hash, "");
-    assert.deepEqual(app.data, {});
-  } finally {
-    stopController();
-    stopReceiver?.();
-    stopBridge?.();
-    source.window.close();
-    site?.window.close();
-    if (oldChrome) Object.defineProperty(globalThis, "chrome", oldChrome);
-    else Reflect.deleteProperty(globalThis, "chrome");
-  }
-});
 
 test("website storage failure returns a clear error without accepting a case", () => {
   const site = new JSDOM("", { url: `${origin}/investigation/${id}` });

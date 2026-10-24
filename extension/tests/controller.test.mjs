@@ -30,6 +30,7 @@ function fakeChrome(getSettings = async () => ({})) {
       id: "fictional-extension",
       getURL: (path) => `chrome-extension://fictional-extension/${path}`,
       onConnect: event(),
+      onMessage: event(),
     },
     storage: {
       local: {
@@ -408,6 +409,113 @@ test("debug view matches assessments by original message ID, not array position"
     );
     assert.ok(container.children[1].querySelector(".risk-medium"));
     assert.equal(container.querySelector("a"), null);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "document", previous);
+    else Reflect.deleteProperty(globalThis, "document");
+    dom.window.close();
+  }
+});
+
+test("debug More Info requests are revalidated in the monitored source conversation", async () => {
+  const dom = fixture();
+  dom.window.document.querySelector("#main .selectable-text").textContent =
+    "Send your OTP.";
+  const fake = fakeChrome(async () => ({ monitoringEnabled: true }));
+  const opened = [];
+  fake.api.runtime.sendMessage = async (request) => {
+    opened.push(request);
+    return { status: "opened" };
+  };
+  const stop = startContentController(dom.window.document);
+  const trusted = {
+    id: "fictional-extension",
+    url: "chrome-extension://fictional-extension/debug.html#tab=4",
+  };
+  const request = (id, sender = trusted) =>
+    new Promise((resolve) =>
+      fake.api.runtime.onMessage.emit(
+        { type: "VERDICTAI_OPEN_SELECTED_MESSAGE", messageId: id },
+        sender,
+        resolve,
+      ),
+    );
+  try {
+    const client = connect(fake.api);
+    await waitFor(() => client.received.at(-1).messages.length === 1);
+    const id = client.received.at(-1).messages[0].id;
+    assert.equal(
+      (
+        await request(id, {
+          id: "other-extension",
+          url: "https://web.whatsapp.com/",
+        })
+      ).status,
+      "rejected",
+    );
+    assert.equal(opened.length, 0);
+    assert.equal((await request(id)).status, "opened");
+    assert.equal(opened[0].message.text, "Send your OTP.");
+    assert.equal(opened[0].assessment.messageId, id);
+    dom.window.document.querySelector("#main .selectable-text").textContent =
+      "Never share your OTP.";
+    assert.equal((await request(id)).status, "unavailable");
+    assert.equal(opened.length, 1);
+    fake.api.storage.onChanged.emit(
+      { monitoringEnabled: { newValue: false } },
+      "local",
+    );
+    assert.equal((await request(id)).status, "unavailable");
+    assert.equal(opened.length, 1);
+    stop();
+    assert.equal(fake.api.runtime.onMessage.size(), 0);
+  } finally {
+    stop();
+    fake.restore();
+    dom.window.close();
+  }
+});
+
+test("debugging entries expose More Info only for eligible incoming messages", async () => {
+  const dom = fixture();
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "document");
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: dom.window.document,
+  });
+  try {
+    const make = (id, text, direction = "incoming") => ({
+      id,
+      text,
+      urls: [],
+      direction,
+      observedAt: new Date().toISOString(),
+    });
+    const snapshot = new AssessmentPipeline().reconcile({
+      enabled: true,
+      status: "ready",
+      conversation: {
+        id: "a",
+        label: "Fictional",
+        identitySource: "header_label",
+      },
+      messages: [
+        make("selected", "Send your OTP."),
+        make("low", "Never share your OTP."),
+        make("outgoing", "Send your OTP.", "outgoing"),
+        make("unknown", "Send your OTP.", "unknown"),
+      ],
+      updatedAt: null,
+    });
+    const opened = [];
+    const container = dom.window.document.createElement("section");
+    renderMessages(container, snapshot, async (id) => {
+      opened.push(id);
+    });
+    assert.equal(container.querySelectorAll("button").length, 1);
+    assert.equal(container.querySelector("button").textContent, "More Info →");
+    container.querySelector("button").click();
+    await Promise.resolve();
+    assert.deepEqual(opened, ["selected"]);
   } finally {
     if (previous) Object.defineProperty(globalThis, "document", previous);
     else Reflect.deleteProperty(globalThis, "document");

@@ -1,6 +1,20 @@
 import type { DetectedSignal, RiskLevel } from "./types.ts";
 
 const ACTIONS: Record<string, readonly string[]> = {
+  "account-unlock-fee": [
+    "Do not pay fees to unlock or verify an account based on this message.",
+    "Contact your bank using its official app or a phone number you already know.",
+  ],
+  "reward-payment": [
+    "Do not pay fees to claim a prize or cashback.",
+    "Check the offer through a provider contact you already know.",
+  ],
+  "reward-promise": [
+    "Check the reward offer independently before sharing details or sending money.",
+  ],
+  "contact-isolation": [
+    "Contact your bank using its official app or a phone number you already know.",
+  ],
   "credential-request": [
     "Do not share your OTP, UPI PIN, password or card details.",
     "Contact your bank using its official app or a phone number you already know.",

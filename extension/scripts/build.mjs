@@ -22,6 +22,17 @@ manifest.content_scripts[1].matches = [`${origin}/investigation/*`];
 await writeFile("dist/manifest.json", JSON.stringify(manifest, null, 2) + "\n");
 await Promise.all([
   build({
+    entryPoints: ["src/content/gmail-index.ts"],
+    outfile: "dist/gmail-content.js",
+    bundle: true,
+    format: "iife",
+    platform: "browser",
+    target: "chrome114",
+    legalComments: "none",
+    banner,
+    define,
+  }),
+  build({
     entryPoints: ["src/content/index.ts"],
     outfile: "dist/content.js",
     bundle: true,

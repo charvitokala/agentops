@@ -30,7 +30,7 @@ npm run check:package
 
 The configured URL must have no credentials, wildcard host, extra path, query or fragment. HTTP is accepted only for `localhost` and `127.0.0.1`. Other origins require HTTPS. Rebuilding changes the website bridge's manifest match and the worker/bridge origin checks together. The website infers its own origin, so no second website configuration or extension ID is needed.
 
-In Chrome, open **chrome://extensions**, enable **Developer mode**, and load or reload **`/Users/charvitokala/Desktop/agentops/extension/dist`**. Then reload WhatsApp Web. After changing the configured origin, reload the extension and both source/destination pages. The built directory contains the MV3 manifest, content script, service worker, website bridge, and existing popup/debug assets.
+In Chrome, open **chrome://extensions**, enable **Developer mode**, and load or reload **`/Users/charvitokala/Desktop/agentops/extension/dist`**. Confirm the extension version is **0.1.1**, then reload WhatsApp Web. Rebuilding alone does not update an already running content script. After changing the configured origin, reload the extension and both source/destination pages. The built directory contains the MV3 manifest, content script, service worker, website bridge, and existing popup/debug assets.
 
 ## Exact manual WhatsApp checks
 
@@ -38,7 +38,7 @@ In Chrome, open **chrome://extensions**, enable **Developer mode**, and load or 
 2. Use consenting participants and fictional test content. For a high-risk example, have the conversation contain an incoming message such as: **“Your bank security team needs your OTP immediately.”** For medium risk, use **“Send your OTP.”** Receiving one of these from a consenting test participant is sufficient; the extension never sends messages itself.
 3. Confirm a compact, solid white VerdictAI note appears below the correct incoming bubble. Confirm the original message and WhatsApp controls are unchanged. High/medium labels must reflect the debugging view's assessment.
 4. Check ordinary incoming text, **“Never share your OTP”**, outgoing messages and unknown-direction layouts. They must not receive warning notes or green Safe badges. No note is a safety guarantee.
-5. Click **More Info** on one note. Confirm a **new tab** opens at `http://localhost:3000/investigation/ext-<uuid>`, or the configured production origin. The address must contain only the opaque case ID, with no message text, WhatsApp ID, name, phone number, query, or fragment.
+5. Click **More Info** on one note (or its eligible debugging entry). Confirm a **new tab** opens at `http://localhost:3000/investigation/ext-<uuid>`, or the configured production origin. The address must contain only the opaque case ID, with no message text, WhatsApp ID, name, phone number, query, or fragment.
 6. In the new tab, compare the exact original message, risk, indicators and safety actions with the selected source/debug entry. Confirm the existing Courtroom is visible with Investigator, Prosecutor, Defender and Judge cards, each still **Coming in Phase 2**. No Judge findings or verified evidence should appear.
 7. Refresh this website tab. The same case should load from this tab's sessionStorage. Copying a case URL into an unrelated/new session may instead show an unavailable-case explanation; there is no database-backed case lookup.
 8. Return to WhatsApp. Edit a test message, switch chats, receive another test message, and scroll enough to replace rendered nodes. Confirm notes update or disappear, never duplicate, and stay associated with their actual messages.
@@ -56,9 +56,11 @@ The existing `WhatsAppReader` now retains an in-memory binding from each extract
 
 `InlineNotes` reconciles only high/medium incoming assessments. Low, insufficient, outgoing and unknown-direction entries are not annotated. Notes use a dedicated Shadow DOM, plain text, an isolated light palette and a native keyboard-accessible button. Synthetic page-script clicks are rejected; tests explicitly inject a mock activation check because JSDOM cannot create trusted user events.
 
-The preferred placement is immediately after the verified bubble in normal block/column flow. A uniquely identified enclosing message row can be used for horizontal bubble wrappers. Grid/unsupported layouts or ambiguous bindings are skipped with fixed diagnostic codes such as `unsupported-message-layout`; diagnostics never contain message text, URLs, contact names or message IDs. No original text is changed or moved.
+The preferred placement is immediately after the verified bubble in normal block/column flow. A uniquely identified enclosing message row can be used for horizontal bubble wrappers. When an outer row is horizontal or positioned, the note can instead be appended inside the verified bubble or its existing vertical message-body wrapper. Original message nodes and native controls stay in place. Unsupported layouts without a reliable vertical slot, or ambiguous bindings, are skipped with fixed diagnostic codes such as `unsupported-message-layout`; diagnostics never contain message text, URLs, contact names or message IDs. No original text is changed or moved.
 
-Owned-host mutations are excluded from observation. Stale notes are pruned in the mutation microtask before the debounced rescan, and every real extraction pass updates bindings even if the textual snapshot is unchanged. This allows replacing a bubble with an equivalent DOM node without leaving a stale note. Edits, removed/virtualized nodes, chat changes, disable and disposal reconcile/remove notes. The More Info handler refreshes the existing monitor before selecting the message again.
+Owned-host mutations are excluded from observation. Stale notes are pruned in the mutation microtask before the debounced rescan, and every real extraction pass updates bindings even if the textual snapshot is unchanged. This allows replacing a bubble with an equivalent DOM node without leaving a stale note. Edits, removed/virtualized nodes, chat changes, disable and disposal reconcile/remove notes. The More Info handler refreshes the existing monitor before selecting the message again. Cloned product-owned hosts are removed within the verified conversation root so DOM replacement cannot leave duplicate notes.
+
+The debugging view also offers **More Info** for high/medium incoming entries. This is a fallback when an inline slot is unavailable. It sends only the selected message ID to the source WhatsApp content script, which revalidates monitoring, current conversation, live DOM binding and risk before invoking the same broker. Debug-page text is never accepted as the source case. Stale or disabled selections show a retry/reload message. This adds no permissions and uses the same new-tab investigation route.
 
 ## Handoff protocol and security assumptions
 
@@ -87,4 +89,17 @@ Updated: existing reader/monitor/controller association hooks, Chrome API typing
 
 Automated coverage includes note levels/placement, duplicates, DOM replacement, edits, chat switching, disable cleanup, trusted-click behavior, exact selected-case handoff, new-tab URL privacy, schema and origin rejection, single-use concurrent claims, expiry/retention, worker recreation, blocked/missing storage, actual website investigation rendering and all four existing agent cards. Run the commands above to reproduce tests, type checks and builds.
 
-WhatsApp DOM hooks remain unofficial. New layouts, fixed/virtualized positioning, unsupported flow containers, identical conversation labels and fallback-ID limitations may prevent notes. The extension chooses missing notes over a guessed placement. WhatsApp may remove extension DOM during rerenders; normal subsequent extraction reconciles it. Always reload WhatsApp Web after installing/reloading the extension. Real positioning, keyboard focus, Chrome permission prompts, service-worker lifecycle and live handoff still require the manual checks above.
+WhatsApp DOM hooks remain unofficial. New layouts, clipped/fixed-height virtualized containers, unsupported flow containers, identical conversation labels and fallback-ID limitations may prevent notes. The extension chooses missing notes over a guessed placement. WhatsApp may remove extension DOM during rerenders; normal subsequent extraction reconciles it. Always reload WhatsApp Web after installing/reloading the extension. Real positioning, keyboard focus, Chrome permission prompts, service-worker lifecycle and live handoff still require the manual checks above.
+
+## More Info visibility fix (0.1.1)
+
+The previous placement guard rejected horizontal message parents and positioned bubbles even when the message had its own safe vertical content wrapper. That prevented both the warning and its button from appearing despite successful detection. The new placement module handles those wrappers without changing WhatsApp styling; unsupported cases still fail closed. Source messaging and a debug-entry action provide the same validated handoff if a note cannot be placed. The Next.js website and approved Courtroom components are unchanged by this fix.
+
+Files for the 0.1.1 fix:
+
+- New: `extension/src/content/note-placement.ts`.
+- Updated runtime/UI: `extension/src/content/inline-notes.ts`, `controller.ts`; `extension/src/shared/chrome.ts`; `extension/src/ui/client.ts`, `debug.ts`, `view.ts`.
+- Updated tests: `extension/tests/inline-notes.test.mjs`, `controller.test.mjs`, `handoff.test.mjs`.
+- Version and instructions: `extension/package.json`, `package-lock.json`, `public/manifest.json`, `README.md`, `HANDOFF.md`.
+
+Validation: 104 extension tests and 7 website tests pass; extension and website TypeScript checks, repository ESLint, extension build/package validation, and Next.js production build pass. Next.js retains its existing nonblocking ESLint-plugin configuration warning. Real Chrome/WhatsApp verification remains manual.
