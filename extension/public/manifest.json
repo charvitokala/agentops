@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "VerdictAI Guardian — WhatsApp Reader",
+  "version": "0.1.0",
+  "description": "Read rendered WhatsApp Web messages and check BFSI warning patterns locally. Preliminary rules only; monitoring is off by default.",
+  "minimum_chrome_version": "114",
+  "permissions": ["storage", "alarms"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": {
+    "default_title": "VerdictAI Guardian",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false,
+      "world": "ISOLATED"
+    },
+    {
+      "matches": ["http://localhost:3000/investigation/*"],
+      "js": ["website-bridge.js"],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "ISOLATED"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'"
+  }
+}

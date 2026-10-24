@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VerdictAI Guardian</title>
+    <link rel="stylesheet" href="ui.css" />
+    <script type="module" src="popup.js"></script>
+  </head>
+  <body class="popup">
+    <main>
+      <header class="brand">
+        <svg
+          width="31"
+          height="36"
+          viewBox="0 0 32 36"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M16 2 29 7v10c0 8-6 13-13 17C9 30 3 25 3 17V7Z"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+          />
+          <path
+            d="m10 17 4 4 8-9"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <div>VerdictAI<span>GUARDIAN · PHASE 1D</span></div>
+      </header>
+      <section class="card controls" aria-labelledby="monitoring-heading">
+        <div class="toggle-row">
+          <div>
+            <h1 id="monitoring-heading">WhatsApp monitoring</h1>
+            <p>Off by default. You stay in control.</p>
+          </div>
+          <label class="switch"
+            ><input
+              id="monitoring"
+              type="checkbox"
+              role="switch"
+              aria-label="Enable WhatsApp message monitoring"
+              disabled /><span aria-hidden="true"></span
+          ></label>
+        </div>
+        <p id="status" class="status" role="status">Connecting to this tab…</p>
+        <div class="count-row">
+          <span>Rendered text messages</span><strong id="count">0</strong>
+        </div>
+      </section>
+      <button id="open-debug" class="primary" type="button" disabled>
+        Open debugging view
+      </button>
+      <p id="error" class="error" role="alert"></p>
+      <p class="privacy">
+        Analysis stays local. More Info hands only the selected case to your
+        configured investigation website. No AI agents run.
+      </p>
+    </main>
+  </body>
+</html>
